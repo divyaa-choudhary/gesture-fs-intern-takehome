@@ -95,3 +95,69 @@ class TestAnswerGeneration:
         assert "2,500" in answer or "2500" in answer or "starter" in answer, (
             "Answer should address the pricing question"
         )
+
+# ────────────────────────────────
+# Out-of-context questions
+# ────────────────────────────────
+class TestOutOfContextQuestions:
+    def test_unrelated_question(self, vector_store, llm):
+        result=ask_question(vector_store, llm, "How many states are in USA?")
+        assert "don't have enough information" in result["answer"].lower(), (
+            "Unrelated questions should trigger the prompt's fallback line"
+        )
+
+    def test_unrelated_question_still_returns_sources(self, vector_store, llm):
+        result=ask_question(vector_store, llm, "How many states are in USA?")
+        assert len(result["sources"]) == 3, (
+            "similarity search should still send the top k chunks even when they are not relevant"
+        )
+
+# ────────────────────────────────
+# Input Validation
+# ────────────────────────────────
+class TestInputValidation:
+    def test_empty_question_raise_value_error(self, vector_store, llm):
+        with pytest.raises(ValueError):
+            ask_question(vector_store, llm, "")
+
+    def test_whitespace_only_question_raises_value_error(self, vector_store, llm):
+        with pytest.raises(ValueError):
+            ask_question(vector_store, llm, "   ")
+
+
+# ────────────────────────────────
+# Gibberish Input
+# ────────────────────────────────
+class TestGibberishInput:
+    def test_gibberish_question_prompt_fallback_response(self, vector_store, llm):
+        result1 = ask_question(vector_store, llm, "...")
+        result2 = ask_question(vector_store, llm, "12345654")
+        assert "don't have enough information" in result1["answer"].lower(), (
+            "Punctuation-only input should trigger the fallback answer"
+        )
+        assert "don't have enough information" in result2["answer"].lower(), (
+            "Numeric-only input should trigger the fallback answer"
+        )
+        
+
+
+# ────────────────────────────────
+# Robustness
+# ────────────────────────────────
+class TestRobustness:
+    def test_long_question_does_not_crash(self, vector_store, llm):
+        long_question = "What starter marketing agency services you provide?" * 100
+        result = ask_question(vector_store, llm, long_question)
+        assert isinstance(result["answer"], str)
+        assert len(result["answer"].strip()) > 0
+
+# ────────────────────────────────
+# Consistency
+# ────────────────────────────────
+class TestConsistency:
+    def test_same_question_returns_samw_sources(self, vector_store, llm):
+        result1 = ask_question(vector_store, llm, "How much does Growth package cost?")
+        result2 = ask_question(vector_store, llm, "How much does Growth package cost?")
+        assert result1["sources"] == result2["sources"], (
+            "Same question should retrieve similar sources"
+        )

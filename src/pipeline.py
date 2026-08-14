@@ -13,9 +13,16 @@ Useful docs:
 """
 
 import os
+import argparse
+from typing import TypedDict
 from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
 from src.knowledge_base import build_knowledge_base
 
+
+class Result(TypedDict):
+    #Return shape for ask_question()
+    answer: str
+    sources: list[str]
 
 # ──────────────────────────────────────────────
 # Provided: local LLM (no API key needed)
@@ -58,7 +65,7 @@ Answer:"""
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # TODO 1: Implement ask_question
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-def ask_question(vector_store, llm, question: str) -> dict:
+def ask_question(vector_store, llm, question: str) -> Result:
     """Retrieve relevant chunks and generate an answer.
 
     Steps:
@@ -79,9 +86,20 @@ def ask_question(vector_store, llm, question: str) -> dict:
         dict with two keys:
             "answer"  -> str: the generated answer
             "sources" -> list[str]: the chunk texts that were retrieved
+
+    Raises:
+        ValueError: if question is empty or whitespace only
     """
     # TODO: implement this (~6-8 lines)
-    raise NotImplementedError("TODO 1: Implement ask_question")
+    if not question or not question.strip():
+        raise ValueError("Question cannot be empty.")
+    documents = vector_store.similarity_search(question, k = 3)
+    sources: list[str] = [doc.page_content for doc in documents]
+    context = "\n\n".join(sources)
+    prompt = PROMPT_TEMPLATE.format(context=context, question=question)
+    result = llm(prompt)
+    answer = result[0]["generated_text"]
+    return {"answer": answer, "sources": sources}
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -100,10 +118,52 @@ def main():
          - Calls ask_question() with their input
          - Prints the retrieved sources and the answer
     """
+    """Interactive Q&A loop for single question mode"""
+    parser = argparse.ArgumentParser(description="Marketing agency Q&A chatbot.")
+    parser.add_argument("--query", type=str, help="Ask a single question and exit.")
+    args = parser.parse_args()
+
     data_dir = os.path.join(os.path.dirname(__file__), "..", "data")
 
+    if not os.path.isdir(data_dir) or not os.listdir(data_dir):
+        print(f"Error: data directory not found or empty at '{data_dir}")
+
     # TODO: implement this (~10-12 lines)
-    raise NotImplementedError("TODO 2: Complete the interactive loop")
+    vector_store = build_knowledge_base(data_dir)
+    llm = get_llm()
+
+
+    # Single-question mode
+    if args.query is not None:
+        try:
+            result = ask_question(vector_store, llm, args.query)
+        except ValueError as e:
+            print(f"Error: {e}")
+            return
+        print_result(result)
+        return
+
+
+    print("Ask a question or type 'quit' to exit.\n")
+    while True:
+        question = input("> ").strip()
+        if question.lower() == "quit":
+            break
+
+        try:
+            result = ask_question(vector_store, llm, question)
+        except ValueError as e:
+            print(f"Error: {e}")
+            continue
+
+        print_result(result)
+
+
+def print_result(result: Result):
+    print("\n Sources:")
+    for i, source in enumerate(result["sources"],1):
+        print(f" {i}. {source[:200]}...")
+    print(f"\n Answer: {result["answer"]}\n")
 
 
 if __name__ == "__main__":
